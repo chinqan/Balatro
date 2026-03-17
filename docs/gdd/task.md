@@ -1,0 +1,32 @@
+# Boss-Attack Card Game — 完整規格書製作計劃
+
+- [x] Planning: 製作完整的 Implementation Plan
+  - [x] 查詢 NotebookLM 收集參考設計原理
+  - [x] 設計核心機制轉換（Score → Attack Boss）
+  - [x] 撰寫 Implementation Plan 並提交審閱
+- [x] Phase 1: 核心玩法規格書 (Game Designer)
+- [x] Phase 2: 關卡與進程設計 (Level Designer)
+- [x] Phase 3: 敘事與世界觀 (Narrative Designer)
+- [x] Phase 4: 介面與體驗設計 (UI Designer + UX Architect)
+- [x] Phase 5: 技術美術與音頻 (Tech Artist + Audio Engineer)
+- [x] Phase 6: 跨系統驗證與最終彙整
+- [x] Phase 7: 完整卡牌與遺物註冊表 (Registry)
+- [x] Phase 8: 遊戲流程與畫面操作規格 (Game Flow & Screen Specs)
+  - [x] 畫面流程圖 (Screen Flow Diagram)
+  - [x] 主選單與進入遊戲
+  - [x] 戰鬥中玩家操作細節
+  - [x] 結算與重啟畫面
+  - [x] 輔助畫面（暫停/設定/收藏庫/教學）
+  - [x] 卡牌視覺狀態分層系統（增強/版本/封印/觸發 VFX 疊加規則）
+  - [x] 卡牌註冊表 VFX 欄位擴充（trigger_vfx、sfx_id、destroy_anim）
+- [x] Phase 9: 核心基礎建設規格 (Core Infrastructure)
+  - [x] 存檔/讀檔系統
+  - [x] 隨機種子系統
+  - [x] 牌庫管理引擎
+  - [x] 統計數據追蹤
+- [x] Phase 10: 局外進度與耐玩性 (Meta-Progression)
+  - [x] 局外解鎖系統
+  - [x] 起始牌組多樣性 (15+)
+  - [x] 挑戰與成就系統
+  - [x] 平衡性測試框架
+
