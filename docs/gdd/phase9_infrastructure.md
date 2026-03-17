@@ -38,7 +38,14 @@
     "drawPile": ["5S_bonus", "KH_holo", ...],
     "hand": [],
     "discardPile": ["3D", "7C_steel", ...],
-    "destroyed": ["QS_glass"]
+    "destroyed": ["QS_glass"],
+    "suitDistribution": {"spades": 10, "hearts": 18, "diamonds": 12, "clubs": 12},
+    "rankDistribution": {"A": 4, "K": 5, "Q": 3, ...}
+  },
+  "handLevels": {
+    "high_card": 1, "pair": 3, "two_pair": 1, "three_of_a_kind": 2,
+    "straight": 1, "flush": 5, "full_house": 1, "four_of_a_kind": 1,
+    "straight_flush": 1, "royal_flush": 1
   },
   "relics": [
     {"id": "relic_042", "order": 0, "charges": 3},

@@ -41,7 +41,7 @@
 | R085 | 反轉鏡 | 罕見 | RT | 打出兩對時重觸發第 1 張牌 | flash | sfx_retrigger | — | — |
 | R086 | 雙面骰 | 稀有 | RT | 50% 重觸發所有打出的牌 | dice_roll | sfx_double_dice | — | — |
 | R087 | 紅色封印共鳴 | 罕見 | RT | 所有帶紅色封印的牌額外觸發 1 次 | red_pulse | sfx_seal_echo | — | — |
-| R088 | 永恆追擊 | 稀有 | RT | 最後 1 個遺物效果觸發 2 次 | echo_wave | sfx_eternal | — | — |
+| R088 | 永恆追擊 | 稀有 | RT | 結算順序中最後 1 個遺物效果觸發 2 次 | echo_wave | sfx_eternal | — | — |
 | R089 | 水晶盾壁 | 普通 | DEF | 打出同花時 +15 Shield | shield_up | sfx_crystal_shield | — | — |
 | R090 | 再生苔蘚 | 普通 | DEF | 每回合回復 3 HP | heal_glow | sfx_moss | — | — |
 | R091 | 荊棘護甲 | 罕見 | DEF | Boss 攻擊時反彈 20% 傷害 | thorn_flash | sfx_thorns | — | — |

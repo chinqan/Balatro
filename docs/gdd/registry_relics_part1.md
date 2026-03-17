@@ -42,7 +42,7 @@
 | R036 | 複製儀 | 稀有 | FX | 每場戰鬥複製 1 張隨機手牌 | clone_flash | sfx_copy | — | — |
 | R037 | 貪食者 | 罕見 | FX | 棄掉的牌有 1/3 機率被永久銷毀 | consume | sfx_eat | dissolve | — |
 | R038 | 賭徒骰子 | 罕見 | FX | 出牌前擲骰，1-3: -10 ATK, 4-6: +30 ATK | dice_roll | sfx_dice | — | — |
-| R039 | 回聲石 | 稀有 | RT | 重觸發最右邊的遺物 1 次 | echo_wave | sfx_echo | — | — |
+| R039 | 回聲石 | 稀有 | RT | 重觸發結算順序中最後一個遺物 1 次 | echo_wave | sfx_echo | — | — |
 | R040 | 共鳴晶 | 稀有 | RT | 重觸發所有 +ATK 型遺物 1 次 | resonance | sfx_crystal | — | — |
 | R041 | 時間迴圈 | 傳奇 | RT | 重觸發所有遺物 1 次 | time_loop | sfx_loop | — | — |
 | R042 | 連擊紋章 | 罕見 | RT | 打出 ≥4 張牌時重觸發最後 1 張牌 | flash | sfx_retrigger | — | — |
