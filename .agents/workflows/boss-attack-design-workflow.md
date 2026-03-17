@@ -34,6 +34,32 @@ Balatro                         →  Boss-Attack RPG
 | 7 | 🔊 Audio Engineer | `balatro-audio-engineer` | Pitch Shifting、動態音樂、攻擊/防禦音效 |
 | 8 | 🧩 UX Architect (驗證) | `balatro-ux-architect` | 跨系統認知連結、無障礙驗證 |
 
+## 📁 目錄結構
+
+```
+docs/
+├── plan/                              ← 專案管理文件
+│   ├── implementation_plan.md         ← 製作計劃（總綱、技術棧、Phase 定義）
+│   ├── boss-attack-design-workflow.md ← 本工作流文件
+│   └── task.md                        ← 進度追蹤清單
+│
+└── gdd/                               ← 遊戲設計規格書（GDD）
+    ├── phase1_boss_attack_engine.md   ← 核心戰鬥引擎
+    ├── phase2_boss_attack_level.md    ← 關卡進程與經濟
+    ├── phase3_boss_attack_narrative.md← 世界觀與敘事
+    ├── phase4_boss_attack_uiux.md     ← 介面與體驗設計
+    ├── phase5_boss_attack_techaudio.md← 技術美術與音頻
+    ├── phase6_boss_attack_final.md    ← 跨系統驗證
+    ├── phase8_game_flow.md            ← 遊戲流程與畫面
+    ├── phase9_infrastructure.md       ← 核心基礎建設
+    ├── phase10_meta_progression.md    ← 局外進度與耐玩性
+    ├── registry_relics_part1.md       ← 神器 #001-050
+    ├── registry_relics_part2.md       ← 神器 #051-100
+    ├── registry_relics_part3.md       ← 神器 #101-150
+    ├── registry_consumables.md        ← 捲軸(22)+靈藥(12)+契約(18)
+    └── registry_blessings.md          ← 永久加持(32)
+```
+
 ---
 
 ## 📋 執行步驟
@@ -133,23 +159,37 @@ Balatro                         →  Boss-Attack RPG
 
 ```
 Phase 1 (Game Designer) ───────────────────┐
-    │ 定義傷害公式/卡牌/遺物                │
+    │ 傷害公式/卡牌/遺物                    │
     ▼                                       ▼
-Phase 2 (Level Designer)            Phase 3 (Narrative Designer)
-    │ 用卡牌矩陣設計Boss反制              │ 用卡牌列表設計命名
-    │                                       │
+Phase 2 (Level Designer)            Phase 3 (Narrative)
+    │ Boss矩陣/經濟                         │ 命名/氛圍
     └───────────┬──────────────────────────┘
-                │
                 ▼
-        Phase 4 (UI + UX)
-                │ 用所有機制設計介面/決策流程
-                ▼
-        Phase 5 (Tech + Audio)
-                │ 用視覺/Juice規格實現Shader/音效
-                ▼
-        Phase 6 (全Agent驗證)
-                ▼
-           Master GDD
+        Phase 4 (UI + UX) ─────────────┐
+                │ 介面/Juice/VFX分層    │
+                ▼                       │
+        Phase 5 (Tech + Audio)         │
+                │                       │
+                ▼                       ▼
+        Phase 7 (Registry)      Phase 8 (Game Flow)
+          需要 Phase 1 機制       需要 Phase 4 佈局
+          + Phase 4 VFX 欄位      + Phase 2 地城結構
+                │                       │
+                └───────────┬──────────┘
+                            ▼
+                    Phase 9 (Infrastructure)
+                      需要 Phase 7 牌庫結構
+                      + Phase 8 存檔時機
+                            │
+                            ▼
+                    Phase 10 (Meta-Progression)
+                      需要 Phase 9 統計/存檔
+                      + Phase 7 解鎖內容
+                            │
+                            ▼
+                    Phase 6 (全Agent驗證)
+                            ▼
+                       Master GDD
 ```
 
 ---

@@ -37,6 +37,32 @@
 - **四階段結算**：完全保留，包裝為「起手式 → 武器附魔 → 被動光環 → 神器追擊」的戰鬥演出
 - **懸念保留**：不顯示預期傷害，讓玩家像觀看「魯布·戈德堡機械」一樣享受傷害數字的連鎖爆炸
 
+## 📁 目錄結構
+
+```
+docs/
+├── plan/                              ← 專案管理文件
+│   ├── implementation_plan.md         ← 本文件（製作計劃總綱）
+│   ├── boss-attack-design-workflow.md ← 工作流（Agent 分工與執行步驟）
+│   └── task.md                        ← 進度追蹤清單
+│
+└── gdd/                               ← 遊戲設計規格書（GDD）
+    ├── phase1_boss_attack_engine.md   ← 核心戰鬥引擎
+    ├── phase2_boss_attack_level.md    ← 關卡進程與經濟
+    ├── phase3_boss_attack_narrative.md← 世界觀與敘事
+    ├── phase4_boss_attack_uiux.md     ← 介面與體驗設計
+    ├── phase5_boss_attack_techaudio.md← 技術美術與音頻
+    ├── phase6_boss_attack_final.md    ← 跨系統驗證
+    ├── phase8_game_flow.md            ← 遊戲流程與畫面
+    ├── phase9_infrastructure.md       ← 核心基礎建設
+    ├── phase10_meta_progression.md    ← 局外進度與耐玩性
+    ├── registry_relics_part1.md       ← 神器 #001-050
+    ├── registry_relics_part2.md       ← 神器 #051-100
+    ├── registry_relics_part3.md       ← 神器 #101-150
+    ├── registry_consumables.md        ← 捲軸(22)+靈藥(12)+契約(18)
+    └── registry_blessings.md          ← 永久加持(32)
+```
+
 ---
 
 ## 規格書結構總覽
