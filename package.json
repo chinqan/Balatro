@@ -1,0 +1,28 @@
+{
+  "name": "boss-attack-rpg",
+  "version": "0.1.0",
+  "description": "Boss-Attack Roguelike 牌組構築遊戲",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chinqan/Balatro.git"
+  },
+  "keywords": ["roguelike", "deckbuilder", "pixijs"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pixi.js": "^8.17.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "^3.2.4"
+  }
+}
