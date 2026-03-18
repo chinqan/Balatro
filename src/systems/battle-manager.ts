@@ -30,6 +30,12 @@ export class BattleManager {
   private _round = 0;
   private _lastSettlement: SettlementResult | null = null;
 
+  // ── Debug / Test Mode ──────────────────────────────────────
+  /** When true: discards are not consumed; plays are not consumed */
+  debugMode = false;
+  infiniteDiscards = false;
+  infinitePlays = false;
+
   constructor(
     private readonly _player: PlayerState,
     private readonly _deck: DeckManager,
@@ -49,6 +55,46 @@ export class BattleManager {
   get boss(): Readonly<BossState> { return this._boss; }
   get hand(): readonly Card[] { return this._deck.state.hand; }
   get lastSettlement(): SettlementResult | null { return this._lastSettlement; }
+
+  /** Return all cards across draw/hand/discard for deck viewer (GDD Phase 4 §1.2) */
+  getAllCards(): Card[] { return this._deck.getAllActiveCards(); }
+
+  // ── Debug helpers ──────────────────────────────────────────
+
+  /** Add money directly (debug mode only) */
+  debugAddMoney(amount: number): void {
+    this._player.money += amount;
+    this._events.emit('economy:money_changed', {
+      current: this._player.money,
+      delta: amount,
+    });
+  }
+
+  /** Restore plays and discards to initial values */
+  debugRefillResources(): void {
+    // Re-read initial values from config defaults
+    this._player.plays    = Math.max(4, this._player.plays);
+    this._player.discards = Math.max(3, this._player.discards);
+    // HUD will re-read player state on next poll
+  }
+
+  /** Force boss defeat (debug) — properly sets phase and emits event */
+  debugForceVictory(): void {
+    this._boss.hp = 0;
+    this._phase = 'victory';
+    this._stats.bossesDefeated++;
+    this._events.emit('battle:boss_defeated', {
+      bossId: this._boss.definition.id,
+      floor: this._boss.definition.floor,
+    });
+  }
+
+  /** Force player defeat (debug) */
+  debugForceDefeat(): void {
+    this._player.hp = 0;
+    this._phase = 'defeat';
+    this._events.emit('battle:player_defeated', {});
+  }
 
   // ═══ Phase: Round Start ══════════════════════════════════
 
@@ -222,7 +268,9 @@ export class BattleManager {
     }
 
     const discarded = this._deck.discardFromHand(selectedIndices);
-    this._player.discards--;
+    if (!this.infiniteDiscards) {
+      this._player.discards--;
+    }
 
     this._events.emit('deck:cards_discarded', {
       cardIds: discarded.map(c => c.id),
@@ -354,6 +402,20 @@ export class BattleManager {
           delta: 3,
         });
       }
+    }
+
+    // ── Remaining plays/discards → money (GDD Phase 2 §3.1 + Phase 8 §4.1) ──
+    const bonusFromPlays = this._player.plays;
+    const bonusFromDiscards = this._player.discards;
+    const totalBonus = bonusFromPlays + bonusFromDiscards;
+    if (totalBonus > 0) {
+      this._player.money += totalBonus;
+      this._events.emit('economy:settlement_bonus', {
+        remainingPlays: bonusFromPlays,
+        remainingDiscards: bonusFromDiscards,
+        totalBonus,
+        moneyAfter: this._player.money,
+      });
     }
 
     // Discard all hand cards

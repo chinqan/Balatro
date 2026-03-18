@@ -18,6 +18,9 @@ export function createInitialPlayerState(): PlayerState {
     plays: CONFIG.INITIAL_PLAYS,
     discards: CONFIG.INITIAL_DISCARDS,
     handSize: CONFIG.HAND_SIZE,
+    consumables: [],
+    maxConsumables: 2,
+    sortOrder: 'rank',
   };
 }
 

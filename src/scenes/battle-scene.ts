@@ -11,12 +11,19 @@ import { COLORS, LAYOUT } from '@/rendering/design-tokens';
 import { HpBar } from '@/ui/hp-bar';
 import { HandDisplay } from '@/ui/hand-display';
 import { BattleHud } from '@/ui/hud';
+import { FloorIndicator } from '@/ui/floor-indicator';
+import { ConsumableSlot } from '@/ui/consumable-slot';
+import { RunInfoPanel } from '@/ui/run-info-panel';
+import { DeckViewer } from '@/ui/deck-viewer';
+import { PauseMenu } from '@/scenes/pause-menu';
+import { DebugPanel } from '@/ui/debug-panel';
 import { DamageNumberSystem } from '@/rendering/damage-number';
 import { BattleManager, createBattle } from '@/systems/battle-manager';
 import { DeckManager } from '@/systems/deck-manager';
 import { createStandardDeck } from '@/models/card';
 import { createInitialPlayerState, createDefaultHandLevels } from '@/models/player';
 import { createInitialRunStats } from '@/models/run-state';
+import type { EncounterType } from '@/models/run-state';
 import { SeedManager } from '@/core/rng';
 import { EventBus } from '@/core/event-bus';
 import { BOSS_DEFINITIONS } from '@/data/bosses';
@@ -39,7 +46,17 @@ export class BattleScene implements Scene {
   private _playerHpBar!: HpBar;
   private _handDisplay!: HandDisplay;
   private _hud!: BattleHud;
+  private _floorIndicator!: FloorIndicator;
+  private _consumableSlot!: ConsumableSlot;
+  private _runInfoPanel!: RunInfoPanel;
+  private _deckViewer!: DeckViewer;
+  private _pauseMenu!: PauseMenu;
+  private _debugPanel!: DebugPanel;
   private _damageNumbers!: DamageNumberSystem;
+
+  // Encounter info (set externally or defaults)
+  private _currentFloor = 1;
+  private _currentEncounterType: EncounterType = 'standard';
 
   // Boss area
   private _bossNameText!: Text;
@@ -47,6 +64,9 @@ export class BattleScene implements Scene {
 
   // Debug
   private _phaseText!: Text;
+
+  // Battle-end guard (防止 phase watcher 多次觸發結算)
+  private _battleEnded = false;
 
   /** Set an external BattleManager (from RunManager). Call before init(). */
   setBattleManager(battle: BattleManager): void {
@@ -129,8 +149,92 @@ export class BattleScene implements Scene {
     this._hud.position.set(0, DESIGN_H - LAYOUT.HUD_H);
     root.addChild(this._hud);
 
+    // ────────── Floor Indicator (top-left HUD) ──────────
+    this._floorIndicator = new FloorIndicator();
+    this._floorIndicator.position.set(8, 6);
+    root.addChild(this._floorIndicator);
+
+    // ────────── Consumable Slot (top-right) ──────────
+    this._consumableSlot = new ConsumableSlot();
+    this._consumableSlot.position.set(DESIGN_W - 120, 6);
+    root.addChild(this._consumableSlot);
+    this._consumableSlot.setOnUse((slotIdx) => this._onUseConsumable(slotIdx));
+
+    // ────────── Run Info Panel (left overlay) ──────────
+    this._runInfoPanel = new RunInfoPanel();
+    this._runInfoPanel.position.set(4, 40);
+    root.addChild(this._runInfoPanel);
+
+    // ── Run Info toggle button ──
+    const runInfoBtn = new Container();
+    runInfoBtn.eventMode = 'static';
+    runInfoBtn.cursor = 'pointer';
+    const runInfoBg = new Graphics();
+    runInfoBg.roundRect(0, 0, 80, 24, 6);
+    runInfoBg.fill({ color: 0x1a1a2e });
+    runInfoBg.stroke({ width: 1, color: COLORS.GOLD, alpha: 0.6 });
+    runInfoBtn.addChild(runInfoBg);
+    const runInfoTxt = new Text({
+      text: '📋 Run Info',
+      style: new TextStyle({ fontSize: 11, fill: COLORS.GOLD }),
+    });
+    runInfoTxt.anchor.set(0.5);
+    runInfoTxt.position.set(40, 12);
+    runInfoBtn.addChild(runInfoTxt);
+    runInfoBtn.position.set(DESIGN_W / 2 - 40, 6);
+    runInfoBtn.on('pointerdown', () => this._runInfoPanel.toggle());
+    root.addChild(runInfoBtn);
+
+    // ── Deck Viewer button ──
+    const deckBtn = new Container();
+    deckBtn.eventMode = 'static';
+    deckBtn.cursor = 'pointer';
+    const deckBtnBg = new Graphics();
+    deckBtnBg.roundRect(0, 0, 80, 24, 6);
+    deckBtnBg.fill({ color: 0x1a2e1a });
+    deckBtnBg.stroke({ width: 1, color: 0x44FF88, alpha: 0.6 });
+    deckBtn.addChild(deckBtnBg);
+    const deckBtnTxt = new Text({
+      text: '🃏 牌庫',
+      style: new TextStyle({ fontSize: 11, fill: 0x44FF88 }),
+    });
+    deckBtnTxt.anchor.set(0.5);
+    deckBtnTxt.position.set(40, 12);
+    deckBtn.addChild(deckBtnTxt);
+    deckBtn.position.set(DESIGN_W / 2 + 50, 6);
+    deckBtn.on('pointerdown', () => {
+      if (this._battle) {
+        this._deckViewer.open(this._battle.getAllCards());
+      }
+    });
+    root.addChild(deckBtn);
+
+    // ────────── Deck Viewer Overlay ──────────
+    this._deckViewer = new DeckViewer();
+    root.addChild(this._deckViewer);
+
+    // ────────── Pause Menu ──────────
+    this._pauseMenu = new PauseMenu();
+    this._pauseMenu.setCallbacks({
+      onResume: () => this._pauseMenu.hide(),
+      onQuitRun: () => this._onBattleEnd?.('defeat'),
+    });
+    root.addChild(this._pauseMenu);
+
+    // ESC toggles pause
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this._pauseMenu.visible) {
+        this._pauseMenu.show();
+      }
+    });
+
     // ────────── Damage Numbers ──────────
     this._damageNumbers = new DamageNumberSystem(root);
+
+    // ────────── Debug Panel (Ctrl+D / ⌘D) ──────────
+    this._debugPanel = new DebugPanel();
+    this._debugPanel.position.set(DESIGN_W - 230, 40); // 右上角
+    root.addChild(this._debugPanel);
 
     // ────────── Debug ──────────
     this._phaseText = new Text({
@@ -164,6 +268,10 @@ export class BattleScene implements Scene {
     this._hud.setOnDiscard(() => this._onDiscardCards());
     this._handDisplay.onSelectionChange((indices) => this._updateHandPreview(indices));
 
+    // ────────── Debug Panel ── wire 到 battle ──────────
+    this._debugPanel.setBattle(this._battle);
+    this._debugPanel.setHudRefresh(() => this._refreshAllUI());
+
     this._refreshAllUI();
   }
 
@@ -173,6 +281,30 @@ export class BattleScene implements Scene {
     this._playerHpBar.update(dt);
     this._damageNumbers.update(dt);
     this._phaseText.text = `Phase: ${this._battle.phase} | Round: ${this._battle.round}`;
+
+    // ── Phase watcher: 持續輪詢確保 victory/defeat 任一路徑都能進結算 ──
+    if (!this._battleEnded) {
+      const phase = this._battle.phase;
+      if (phase === 'victory') {
+        this._battleEnded = true;
+        console.log(`[DEBUG] Phase watcher triggered: VICTORY, _onBattleEnd=${typeof this._onBattleEnd}`);
+        this._showMessage('🎉 BOSS DEFEATED!');
+        this._refreshAllUI();
+        setTimeout(() => {
+          console.log('[DEBUG] setTimeout firing _onBattleEnd(victory)');
+          this._onBattleEnd?.('victory');
+        }, 1500);
+      } else if (phase === 'defeat') {
+        this._battleEnded = true;
+        console.log(`[DEBUG] Phase watcher triggered: DEFEAT, _onBattleEnd=${typeof this._onBattleEnd}`);
+        this._showMessage('💀 DEFEATED...');
+        this._refreshAllUI();
+        setTimeout(() => {
+          console.log('[DEBUG] setTimeout firing _onBattleEnd(defeat)');
+          this._onBattleEnd?.('defeat');
+        }, 1500);
+      }
+    }
   }
 
   /**
@@ -200,12 +332,13 @@ export class BattleScene implements Scene {
 
     try {
       const result = this._battle.playCards(indices);
+      console.log(`[DEBUG] playCards done → phase=${this._battle.phase}, bossHP=${this._battle.boss.hp}, damage=${result.finalDamage}`);
       this._damageNumbers.spawn(DESIGN_W / 2, LAYOUT.BOSS_AREA_Y + 120, result.finalDamage, COLORS.ATK);
 
-      if (this._battle.phase === 'victory') {
-        this._showMessage('🎉 BOSS DEFEATED!');
+      // 勝負由 update() phase watcher 統一處理，此處不再重複判斷
+      if (this._battle.phase === 'victory' || this._battle.phase === 'defeat') {
+        console.log(`[DEBUG] playCards detected ${this._battle.phase}, waiting for phase watcher`);
         this._refreshAllUI();
-        setTimeout(() => this._onBattleEnd?.('victory'), 1500);
         return;
       }
 
@@ -253,10 +386,9 @@ export class BattleScene implements Scene {
       this._damageNumbers.spawn(120, LAYOUT.HAND_AREA_Y + 70, result.hpLost, COLORS.BOSS_DMG as number);
     }
 
-    if (phaseAfter === 'defeat') {
-      this._showMessage('💀 DEFEATED...');
+    // 勝負由 update() phase watcher 統一處理，此處不再重複判斷
+    if (phaseAfter === 'defeat' || phaseAfter === 'victory') {
       this._refreshAllUI();
-      setTimeout(() => this._onBattleEnd?.('defeat'), 1500);
       return;
     }
 
@@ -270,6 +402,18 @@ export class BattleScene implements Scene {
 
   // ─── UI ───────────────────────────────────────────────────
 
+  /** Set current floor/encounter for the FloorIndicator. Call before startBattle(). */
+  setEncounterInfo(floor: number, encounterType: EncounterType): void {
+    this._currentFloor = floor;
+    this._currentEncounterType = encounterType;
+  }
+
+  private _onUseConsumable(slotIndex: number): void {
+    // TODO: integrate with ConsumableManager when target selection UI is ready
+    // For now, log the intent
+    console.log(`[BattleScene] Use consumable at slot ${slotIndex}`);
+  }
+
   private _refreshAllUI(): void {
     const player = this._battle.player;
     const boss = this._battle.boss;
@@ -279,6 +423,15 @@ export class BattleScene implements Scene {
     this._bossIntentText.text = boss.currentIntent.description;
     this._playerHpBar.setValue(player.hp, player.maxHp, player.shield);
     this._hud.update(player.plays, player.discards, player.money);
+
+    // Update new UI elements
+    this._floorIndicator.update(this._currentFloor, this._currentEncounterType);
+    this._consumableSlot.update(player.consumables, player.maxConsumables);
+    this._runInfoPanel.setData(
+      this._battle['_handLevels'],
+      this._battle['_stats'],
+      this._battle['_relics'],
+    );
 
     this._handDisplay.clearSelection();
     this._handDisplay.setCards([...this._battle.hand]);

@@ -104,6 +104,9 @@ export interface RelicEffect {
   stat: string;           // 'atk', 'dmg', 'dmg_mult', 'shield', 'money', etc.
   value: number;
   condition?: string;     // e.g. 'hp_below_50'
+  chance?: number;        // 0-1 probability (e.g. R023 量子疊加 50%)
+  breakChance?: number;   // 0-1 chance to destroy relic on trigger (e.g. R019 超新星)
+  sideEffect?: { stat: string; value: number };  // secondary stat effect (e.g. R008 血染短刀)
 }
 
 export interface RelicDefinition {
@@ -138,15 +141,74 @@ export interface BossDefinition {
   intents: BossIntentType[];
 }
 
+// ─── Card Sort Order ────────────────────────────────────────
+/** Hand always sorted — either by rank (desc) or by suit (♠♥♦♣). */
+export type CardSortOrder = 'rank' | 'suit';
+
+// ─── Consumable Types (GDD Phase 1 §3.5) ────────────────────
+export type ConsumableType = 'scroll' | 'elixir' | 'pact';
+
+export type ConsumableTargetMode =
+  | 'none'       // No target needed (elixirs)
+  | 'select_card'  // Must pick 1+ cards from hand
+  | 'select_relic'; // Must pick a relic
+
+export interface ConsumableDefinition {
+  id: string;
+  name: string;
+  type: ConsumableType;
+  description: string;
+  /** Shop price */
+  price: number;
+  targetMode: ConsumableTargetMode;
+  /** Max targets if targetMode !== 'none' */
+  targetCount?: number;
+  /** FX / SFX keys */
+  fxKey: string;
+  sfxKey: string;
+}
+
+export interface ConsumableInstance {
+  definitionId: string;
+}
+
+// ─── Tag Types (GDD Phase 2 §3.5) ────────────────────────────
+export type TagId =
+  | 'tag_rare'       // Next shop guaranteed rare relic
+  | 'tag_economy'    // Immediately gain 10 gold
+  | 'tag_negative'   // Next relic gained has negative edition
+  | 'tag_elixir'     // Gain 2 free elixirs
+  | 'tag_challenge'; // Next battle ×1.5 DMG, boss ATK also ×1.5
+
+export interface TagDefinition {
+  id: TagId;
+  name: string;
+  description: string;
+  /** Is immediate (economy) or triggered later */
+  immediate: boolean;
+}
+
+export interface TagInstance {
+  tagId: TagId;
+  /** false until consumed/applied */
+  consumed: boolean;
+}
+
 // ─── Player State ───────────────────────────────────────────
 export interface PlayerState {
   hp: number;
   maxHp: number;
   shield: number;
   money: number;
-  plays: number;      // Remaining plays this round
-  discards: number;   // Remaining discards this round
-  handSize: number;   // Max hand size
+  plays: number;       // Remaining plays this round
+  discards: number;    // Remaining discards this round
+  handSize: number;    // Max hand size
+  /** Current consumable inventory (max 2 by default, extendable by blessings) */
+  consumables: ConsumableInstance[];
+  /** Max number of consumable slots */
+  maxConsumables: number;
+  /** Hand sort order — always sorted, default 'rank' */
+  sortOrder: CardSortOrder;
 }
 
 // ─── Settlement Step Record (for animation playback) ────────

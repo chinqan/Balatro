@@ -8,7 +8,7 @@ import type { Card, Suit } from '@/types';
 import { createCardSprite, setCardSelected } from '@/rendering/card-renderer';
 import { COLORS, LAYOUT } from '@/rendering/design-tokens';
 
-export type SortMode = 'none' | 'suit' | 'rank';
+export type SortMode = 'suit' | 'rank';
 
 const SUIT_ORDER: Record<Suit, number> = {
   spades: 0, hearts: 1, diamonds: 2, clubs: 3,
@@ -21,14 +21,13 @@ export class HandDisplay extends Container {
   private _sortMode: SortMode = 'rank';
   private _currentCards: Card[] = [];
 
-  // Sort buttons
-  private _sortSuitBtn!: Container;
-  private _sortRankBtn!: Container;
+  // Sort toggle button
+  private _sortToggleBtn!: Container;
 
   constructor() {
     super();
     this._createSortButtons();
-    this._updateSortButtons();
+    this._updateSortButton();
   }
 
   onSelectionChange(callback: (indices: number[]) => void): void {
@@ -175,21 +174,15 @@ export class HandDisplay extends Container {
           return SUIT_ORDER[a.card.suit] - SUIT_ORDER[b.card.suit];
         });
         break;
-      case 'none':
-      default:
-        break;
     }
 
     return indexed;
   }
 
-  setSortMode(mode: SortMode): void {
-    if (this._sortMode === mode) {
-      this._sortMode = 'none'; // Toggle off
-    } else {
-      this._sortMode = mode;
-    }
-    this._updateSortButtons();
+  /** Toggle between 'rank' and 'suit' sorting. Always sorted. */
+  toggleSortMode(): void {
+    this._sortMode = this._sortMode === 'rank' ? 'suit' : 'rank';
+    this._updateSortButton();
     // Re-render cards with new sort
     if (this._currentCards.length > 0) {
       this.clearSelection();
@@ -198,50 +191,50 @@ export class HandDisplay extends Container {
   }
 
   private _createSortButtons(): void {
-    // Sort by suit button
-    this._sortSuitBtn = this._makeSortButton('花色', -55);
-    this._sortSuitBtn.on('pointerdown', () => this.setSortMode('suit'));
-    this.addChild(this._sortSuitBtn);
+    const BUTTON_W = 110;
+    const BUTTON_H = 26;
 
-    // Sort by rank button
-    this._sortRankBtn = this._makeSortButton('數字', 55);
-    this._sortRankBtn.on('pointerdown', () => this.setSortMode('rank'));
-    this.addChild(this._sortRankBtn);
-  }
-
-  private _makeSortButton(label: string, xOffset: number): Container {
     const btn = new Container();
     btn.eventMode = 'static';
     btn.cursor = 'pointer';
 
     const bg = new Graphics();
-    bg.roundRect(0, 0, 80, 24, 6);
-    bg.fill(0x333344);
-    bg.stroke({ width: 1, color: 0x555555 });
+    bg.roundRect(0, 0, BUTTON_W, BUTTON_H, 6);
+    bg.fill(0x2E86AB);
+    bg.stroke({ width: 1, color: COLORS.GOLD });
     btn.addChild(bg);
 
+    const label = this._sortMode === 'rank' ? '數字' : '花色';
     const text = new Text({
-      text: `排序: ${label}`,
-      style: new TextStyle({ fontSize: 10, fill: COLORS.TEXT_DIM }),
+      text: `🔀 排序: ${label}`,
+      style: new TextStyle({ fontSize: 10, fill: '#FFFFFF' }),
     });
     text.anchor.set(0.5);
-    text.position.set(40, 12);
+    text.position.set(BUTTON_W / 2, BUTTON_H / 2);
     btn.addChild(text);
 
-    btn.position.set(xOffset - 40, 80); // Below cards
-    return btn;
+    btn.position.set(-BUTTON_W / 2, 80); // Centered below cards
+    btn.on('pointerdown', () => this.toggleSortMode());
+
+    this._sortToggleBtn = btn;
+    this.addChild(this._sortToggleBtn);
   }
 
-  private _updateSortButtons(): void {
-    // Update button visuals based on active sort
-    const updateBtn = (btn: Container, active: boolean) => {
-      const bg = btn.getChildAt(0) as Graphics;
-      bg.clear();
-      bg.roundRect(0, 0, 80, 24, 6);
-      bg.fill(active ? 0x2E86AB : 0x333344);
-      bg.stroke({ width: 1, color: active ? COLORS.GOLD : 0x555555 });
-    };
-    updateBtn(this._sortSuitBtn, this._sortMode === 'suit');
-    updateBtn(this._sortRankBtn, this._sortMode === 'rank');
+  private _updateSortButton(): void {
+    const btn = this._sortToggleBtn;
+    const BUTTON_W = 110;
+    const BUTTON_H = 26;
+
+    // Update background
+    const bg = btn.getChildAt(0) as Graphics;
+    bg.clear();
+    bg.roundRect(0, 0, BUTTON_W, BUTTON_H, 6);
+    bg.fill(0x2E86AB);
+    bg.stroke({ width: 1, color: COLORS.GOLD });
+
+    // Update label text
+    const text = btn.getChildAt(1) as Text;
+    const label = this._sortMode === 'rank' ? '數字' : '花色';
+    text.text = `🔀 排序: ${label}`;
   }
 }

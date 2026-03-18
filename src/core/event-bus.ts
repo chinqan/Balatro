@@ -25,6 +25,14 @@ export interface GameEvents {
   // Economy events
   'economy:money_changed': { current: number; delta: number };
   'economy:item_purchased': { itemId: string; cost: number };
+  'economy:settlement_bonus': { remainingPlays: number; remainingDiscards: number; totalBonus: number; moneyAfter: number };
+
+  // Consumable events
+  'consumable:used': { definitionId: string; name: string; type: string };
+  'consumable:hand_level_up': { handType: string; newLevel: number };
+  'consumable:hand_levels_changed': { handLevels: Record<string, number> };
+  'consumable:pact_effect': { id: string; effect: string };
+  'consumable:effect_pending': { id: string; ctx: unknown };
 
   // Relic events
   'relic:triggered': { relicId: string; effect: string };
