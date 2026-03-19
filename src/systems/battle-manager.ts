@@ -142,6 +142,9 @@ export class BattleManager {
     if (selectedIndices.length === 0) {
       throw new Error('Must select at least 1 card');
     }
+    if (selectedIndices.length > 5) {
+      throw new Error('Cannot play more than 5 cards at once');
+    }
 
     // Remove selected cards from hand
     const playedCards = this._deck.playCards(selectedIndices);

@@ -4,7 +4,7 @@
 
 export const COLORS = {
   // Background
-  BG_DARK: 0x0a0a0a,
+  BG_DARK: 0x111827,
   BG_PANEL: 0x1a1a2e,
   BG_CARD: 0x16213e,
 

@@ -93,15 +93,28 @@ export class HandDisplay extends Container {
     const baseY = ((container as unknown as Record<string, unknown>)['_baseY'] as number) ?? 0;
 
     if (this._selectedIndices.has(displayIndex)) {
+      // Deselect
       this._selectedIndices.delete(displayIndex);
       container.y = baseY;
       container.scale.set(1.0);
       setCardSelected(container, false);
     } else {
+      // Block selection if 5 cards already chosen
+      if (this._selectedIndices.size >= 5) return;
+
       this._selectedIndices.add(displayIndex);
       container.y = baseY - 20;
       container.scale.set(1.08);
       setCardSelected(container, true);
+    }
+
+    // Dim cards that can't be selected (limit reached)
+    const atLimit = this._selectedIndices.size >= 5;
+    for (let i = 0; i < this._cardContainers.length; i++) {
+      const c = this._cardContainers[i];
+      if (c && !this._selectedIndices.has(i)) {
+        c.alpha = atLimit ? 0.45 : 1.0;
+      }
     }
 
     // Map display indices back to original card indices

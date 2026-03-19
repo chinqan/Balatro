@@ -110,7 +110,7 @@ export class SettlementScene implements Scene {
     // Dark background overlay
     const bg = new Graphics();
     bg.rect(0, 0, DESIGN_W, DESIGN_H);
-    bg.fill({ color: 0x050a0f });
+    bg.fill({ color: 0x0f1f1a });
     root.addChild(bg);
 
     // Title
@@ -236,7 +236,7 @@ export class SettlementScene implements Scene {
 
     const bg = new Graphics();
     bg.rect(0, 0, DESIGN_W, DESIGN_H);
-    bg.fill({ color: 0x0a0000 });
+    bg.fill({ color: 0x1a0a0a });
     root.addChild(bg);
 
     const title = new Text({
@@ -309,7 +309,7 @@ export class SettlementScene implements Scene {
 
     const bg = new Graphics();
     bg.rect(0, 0, DESIGN_W, DESIGN_H);
-    bg.fill({ color: 0x07050a });
+    bg.fill({ color: 0x0f0f1a });
     root.addChild(bg);
 
     const title = new Text({

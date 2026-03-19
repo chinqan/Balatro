@@ -118,4 +118,12 @@ export class BattleHud extends Container {
   setHandTypePreview(text: string): void {
     this._handTypeText.text = text;
   }
+
+  /** Lock or unlock the action buttons during animations */
+  setEnabled(enabled: boolean): void {
+    this._playBtn.eventMode = enabled ? 'static' : 'none';
+    this._discardBtn.eventMode = enabled ? 'static' : 'none';
+    this._playBtn.alpha = enabled ? 1 : 0.4;
+    this._discardBtn.alpha = enabled ? 1 : 0.4;
+  }
 }

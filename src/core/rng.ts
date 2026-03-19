@@ -43,7 +43,7 @@ export function generateSeedString(): string {
 }
 
 /** All sub-seed categories as defined in GDD Phase 9 §2.1 */
-export type SeedCategory = 'shop' | 'pack' | 'boss' | 'loot' | 'event' | 'deck';
+export type SeedCategory = 'shop' | 'pack' | 'boss' | 'loot' | 'event' | 'deck' | 'skip';
 
 /**
  * SeedManager: derives deterministic sub-seeds from a master seed.

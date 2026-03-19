@@ -8,8 +8,11 @@ import type { Scene } from '@/scenes/scene-manager';
 import { Viewport, DESIGN_W, DESIGN_H } from '@/rendering/viewport';
 import { COLORS } from '@/rendering/design-tokens';
 import { RunManager } from '@/systems/run-manager';
+import type { SkipReward } from '@/systems/run-manager'; // used by _previewSkipReward
 import { getBossForFloor, FLOOR_ENEMY_HP } from '@/data/bosses';
 import type { BossDefinition } from '@/types';
+
+// (3-card Balatro-style layout uses full DESIGN_W)
 
 // ─── Mechanic labels ─────────────────────────────────────────
 const MECHANIC_LABELS: Record<string, string> = {
@@ -39,7 +42,6 @@ export class MapScene implements Scene {
   private _onSkipEncounter?: () => void;
 
   // Overlay containers
-  private _skipOverlay: Container | null = null;
   private _bossPreviewOverlay: Container | null = null;
 
   setRunManager(run: RunManager): void { this._run = run; }
@@ -61,272 +63,551 @@ export class MapScene implements Scene {
     this._rebuildMap();
   }
 
-  // ─── Main Map Layout ─────────────────────────────────────
+  // ─── Main Map Layout — Balatro 3-card style ──────────────
 
   private _rebuildMap(): void {
     const root = this._viewport.root;
     root.removeChildren();
-    this._skipOverlay = null;
     this._bossPreviewOverlay = null;
 
-    // Background
+    // ─── Background ─────────────────────────────────────
     const bg = new Graphics();
     bg.rect(0, 0, DESIGN_W, DESIGN_H);
-    bg.fill(0x0d1117);
+    bg.fill(0x1a2a1a);   // Balatro's dark green felt
     root.addChild(bg);
 
-    // Title
-    const title = new Text({
-      text: '🏰 地城地圖',
-      style: new TextStyle({ fontSize: 26, fill: COLORS.GOLD, fontWeight: 'bold' }),
-    });
-    title.anchor.set(0.5, 0);
-    title.position.set(DESIGN_W / 2, 16);
-    root.addChild(title);
+    // Subtle grid texture overlay
+    for (let gx = 0; gx < DESIGN_W; gx += 32) {
+      const gl = new Graphics();
+      gl.moveTo(gx, 0); gl.lineTo(gx, DESIGN_H);
+      gl.stroke({ width: 0.5, color: 0x1f3a1f, alpha: 0.5 });
+      root.addChild(gl);
+    }
+    for (let gy = 0; gy < DESIGN_H; gy += 32) {
+      const gl = new Graphics();
+      gl.moveTo(0, gy); gl.lineTo(DESIGN_W, gy);
+      gl.stroke({ width: 0.5, color: 0x1f3a1f, alpha: 0.5 });
+      root.addChild(gl);
+    }
 
     if (!this._run) return;
 
-    // Player info bar
-    const infoText = new Text({
-      text: `❤️ ${this._run.player.hp}/${this._run.player.maxHp}  |  💰 ${this._run.player.money}  |  🔮 遺物: ${this._run.relics.length}`,
-      style: new TextStyle({ fontSize: 13, fill: COLORS.TEXT_PRIMARY }),
-    });
-    infoText.anchor.set(0.5, 0);
-    infoText.position.set(DESIGN_W / 2, 52);
-    root.addChild(infoText);
+    const currentFloorData = this._run.currentFloorData;
+    if (!currentFloorData) return;
 
-    // Floor nodes
-    const startY = 90;
-    const nodeH = 58;
-    const floors = this._run.floors;
+    const floorNum    = currentFloorData.floor;
+    const encIdx      = currentFloorData.currentEncounter;
+    const encounters  = currentFloorData.encounters;
 
-    for (let f = 0; f < floors.length; f++) {
-      const floorData = floors[f];
-      const y = startY + f * nodeH;
-      const isCurrent = f === this._run.currentFloor;
+    // ─── Header ─────────────────────────────────────────
+    const headerBg = new Graphics();
+    headerBg.rect(0, 0, DESIGN_W, 56);
+    headerBg.fill({ color: 0x000000, alpha: 0.45 });
+    root.addChild(headerBg);
 
-      // Floor label
-      const floorLabel = new Text({
-        text: `F${floorData.floor}`,
-        style: new TextStyle({
-          fontSize: 13,
-          fill: isCurrent ? COLORS.GOLD : floorData.completed ? 0x4AFF7A : COLORS.TEXT_DIM,
-          fontWeight: isCurrent ? 'bold' : 'normal',
-        }),
+    // Floor progress pips
+    const TOTAL_FLOORS = this._run.floors.length;
+    const pipW = 18; const pipGap = 8;
+    const pipTotalW = TOTAL_FLOORS * (pipW + pipGap) - pipGap;
+    let pipX = DESIGN_W / 2 - pipTotalW / 2;
+    for (let i = 0; i < TOTAL_FLOORS; i++) {
+      const fd = this._run.floors[i];
+      const pip = new Graphics();
+      let pipColor: number;
+      if (fd.completed)       pipColor = 0x4AFF7A;
+      else if (i === this._run.currentFloor) pipColor = COLORS.GOLD;
+      else                    pipColor = 0x334455;
+      pip.roundRect(pipX, 8, pipW, 8, 4);
+      pip.fill(pipColor);
+      root.addChild(pip);
+
+      const pipLabel = new Text({
+        text: `F${fd.floor}`,
+        style: new TextStyle({ fontSize: 8, fill: i === this._run.currentFloor ? COLORS.GOLD : 0x556677 }),
       });
-      floorLabel.position.set(22, y + 10);
-      root.addChild(floorLabel);
+      pipLabel.anchor.set(0.5, 0);
+      pipLabel.position.set(pipX + pipW / 2, 18);
+      root.addChild(pipLabel);
 
-      // Encounter nodes
-      for (let e = 0; e < floorData.encounters.length; e++) {
-        const encounterType = floorData.encounters[e];
-        const x = 100 + e * 180;
-        const isCurrentEncounter = isCurrent && e === floorData.currentEncounter;
-        const isPast = floorData.completed || (isCurrent && e < floorData.currentEncounter);
-
-        const nodeW = 155;
-        const nodeNodeH = 42;
-
-        const node = new Container();
-        const nodeBg = new Graphics();
-        nodeBg.roundRect(0, 0, nodeW, nodeNodeH, 8);
-
-        if (isCurrentEncounter) {
-          nodeBg.fill(0x1E3A5F);
-          nodeBg.stroke({ width: 2, color: COLORS.GOLD });
-        } else if (isPast) {
-          nodeBg.fill(0x112211);
-          nodeBg.stroke({ width: 1, color: 0x2a6a2a });
-        } else {
-          nodeBg.fill(0x111120);
-          nodeBg.stroke({ width: 1, color: 0x222233 });
-        }
-        node.addChild(nodeBg);
-
-        const icon = encounterType === 'boss'     ? '💀' :
-                     encounterType === 'elite'    ? '🛡️' : '⚔️';
-        const label = encounterType === 'boss'    ? ` Boss F${floorData.floor}` :
-                      encounterType === 'elite'   ? ' 菁英怪' : ' 普通怪';
-
-        const nodeTxt = new Text({
-          text: isPast ? `✓ ${label.trim()}` : `${icon}${label}`,
-          style: new TextStyle({
-            fontSize: 12,
-            fill: isPast ? 0x446644 : isCurrentEncounter ? 0xFFFFFF : COLORS.TEXT_DIM,
-          }),
-        });
-        nodeTxt.position.set(8, 7);
-        node.addChild(nodeTxt);
-
-        // Sub-info (HP for current, next hint)
-        const floorHp = FLOOR_ENEMY_HP[floorData.floor];
-        const hp = floorHp
-          ? (encounterType === 'boss'   ? floorHp.boss :
-             encounterType === 'elite'  ? floorHp.elite : floorHp.standard)
-          : '?';
-
-        const hpTxt = new Text({
-          text: isCurrentEncounter ? `→ HP: ${hp}` : '',
-          style: new TextStyle({ fontSize: 10, fill: 0xFFAA00 }),
-        });
-        hpTxt.position.set(8, 26);
-        node.addChild(hpTxt);
-
-        node.position.set(x, y);
-        node.eventMode = 'static';
-        node.cursor = isCurrentEncounter ? 'pointer' : 'default';
-
-        // Click Boss node → show Boss preview
-        if (isCurrentEncounter && encounterType === 'boss') {
-          node.on('pointerdown', () => this._showBossPreview(floorData.floor));
-          node.on('pointerover', () => { nodeBg.tint = 0xdddddd; });
-          node.on('pointerout',  () => { nodeBg.tint = 0xffffff; });
-        }
-
-        root.addChild(node);
-
-        // Connector
-        if (e < floorData.encounters.length - 1) {
-          const line = new Graphics();
-          line.moveTo(x + nodeW, y + nodeNodeH / 2);
-          line.lineTo(x + nodeW + 25, y + nodeNodeH / 2);
-          line.stroke({ width: 1, color: isPast ? 0x2a6a2a : 0x222233 });
-          root.addChild(line);
-        }
-      }
+      pipX += pipW + pipGap;
     }
 
-    // ─── Action buttons ──────────────────────────────────
-    const buttonY = DESIGN_H - 72;
+    // Player info
+    const infoTxt = new Text({
+      text: `❤️ ${this._run.player.hp}/${this._run.player.maxHp}   💰 ${this._run.player.money}   🔮 遺物: ${this._run.relics.length}`,
+      style: new TextStyle({ fontSize: 12, fill: COLORS.TEXT_PRIMARY }),
+    });
+    infoTxt.anchor.set(1, 0);
+    infoTxt.position.set(DESIGN_W - 16, 8);
+    root.addChild(infoTxt);
 
-    // Start Battle
-    const BTN_H = 44;
-    const startBtn = this._buildButton('⚔️ 開始戰鬥', 160, BTN_H, COLORS.BUTTON_PRIMARY, () => this._onStartEncounter?.());
-    startBtn.position.set(DESIGN_W / 2 - 185, buttonY);
-    root.addChild(startBtn);
+    // ─── 3-Card layout — all encounters of this floor ──────
+    // Cards are FIXED: left=enc0, center=enc1, right=enc2(Boss)
+    // Current encounter gets the gold "Select" frame.
+    const CARD_W = 210;
+    const CARD_H = 520;
+    const GAP    = 24;
+    const CARD_Y = 72;
+    const totalW = CARD_W * 3 + GAP * 2;
+    const startX = DESIGN_W / 2 - totalW / 2;
 
-    // Skip (non-boss only)
-    const currentFloor = this._run.currentFloorData;
-    if (currentFloor) {
-      const currentType = currentFloor.encounters[currentFloor.currentEncounter];
-      if (currentType && currentType !== 'boss') {
-        const skipBtn = this._buildButton('⏩ 跳過遭遇', 160, BTN_H, 0x334455, () => this._openSkipConfirm(currentType));
-        skipBtn.position.set(DESIGN_W / 2 + 25, buttonY);
-        root.addChild(skipBtn);
-      }
+    for (let i = 0; i < encounters.length; i++) {
+      const cardX = startX + i * (CARD_W + GAP);
+      const encType = encounters[i];
 
-      // Boss preview hint button
-      if (currentType === 'boss') {
-        const previewBtn = this._buildButton('👁 Boss 預覽', 160, BTN_H, 0x3a1a4a, () => this._showBossPreview(currentFloor.floor));
-        previewBtn.position.set(DESIGN_W / 2 + 25, buttonY);
-        root.addChild(previewBtn);
-      }
+      // Determine role for this card
+      let role: 'previous' | 'current' | 'upcoming';
+      if (i < encIdx)      role = 'previous';
+      else if (i === encIdx) role = 'current';
+      else                 role = 'upcoming';
+
+      const onStart = (role === 'current')
+        ? () => this._onStartEncounter?.()
+        : null;
+
+      this._drawEncounterCard(root, role, encType, floorNum,
+        i, cardX, CARD_Y, CARD_W, CARD_H, onStart);
     }
+
+    // ─── Floor progress bar at bottom ───────────────────
+    this._drawFloorProgressBar(root, floorNum, encIdx, encounters.length);
   }
 
-  // ─── Skip Confirm Overlay ─────────────────────────────
+  // ─── Single encounter card ───────────────────────────────
 
-  private _openSkipConfirm(encounterType: 'standard' | 'elite'): void {
-    const root = this._viewport.root;
+  private _drawEncounterCard(
+    root: Container,
+    role: 'previous' | 'current' | 'upcoming',
+    encType: 'standard' | 'elite' | 'boss' | null,
+    floor: number,
+    _encIdx: number | undefined,
+    x: number, y: number, w: number, h: number,
+    onStart: (() => void) | null,
+  ): void {
+    const isPrev    = role === 'previous';
+    const isCurrent = role === 'current';
+    const isNext    = role === 'upcoming';
 
-    // Remove old overlay if exists
-    if (this._skipOverlay) root.removeChild(this._skipOverlay);
-
-    const overlay = new Container();
-    this._skipOverlay = overlay;
-
-    // Dim background
-    const dim = new Graphics();
-    dim.rect(0, 0, DESIGN_W, DESIGN_H);
-    dim.fill({ color: 0x000000, alpha: 0.65 });
-    dim.eventMode = 'static';
-    overlay.addChild(dim);
-
-    // Dialog box
-    const dlgW = 340;
-    const dlgH = 260;
-    const dlgX = DESIGN_W / 2 - dlgW / 2;
-    const dlgY = DESIGN_H / 2 - dlgH / 2;
-
-    const dlg = new Graphics();
-    dlg.roundRect(dlgX, dlgY, dlgW, dlgH, 12);
-    dlg.fill(0x0d1117);
-    dlg.stroke({ width: 2, color: COLORS.GOLD, alpha: 0.7 });
-    overlay.addChild(dlg);
-
-    const dlgTitle = new Text({
-      text: '⏩ 確定跳過？',
-      style: new TextStyle({ fontSize: 18, fill: COLORS.GOLD, fontWeight: 'bold' }),
-    });
-    dlgTitle.anchor.set(0.5, 0);
-    dlgTitle.position.set(DESIGN_W / 2, dlgY + 14);
-    overlay.addChild(dlgTitle);
-
-    // Forfeited section
-    const forfeitLabel = new Text({
-      text: '❌ 放棄：',
-      style: new TextStyle({ fontSize: 13, fill: 0xFF6666 }),
-    });
-    forfeitLabel.position.set(dlgX + 16, dlgY + 52);
-    overlay.addChild(forfeitLabel);
-
-    const goldAmt = encounterType === 'elite' ? '5-7 金' : '3-5 金';
-    const forfeitItems = [`  • ${goldAmt} 獎勵`, '  • 進入商店機會'];
-    let fy = dlgY + 72;
-    for (const item of forfeitItems) {
-      const t = new Text({ text: item, style: new TextStyle({ fontSize: 12, fill: COLORS.TEXT_DIM }) });
-      t.position.set(dlgX + 16, fy);
-      overlay.addChild(t);
-      fy += 20;
+    // Card background + border
+    const card = new Container();
+    const cardBg = new Graphics();
+    let borderColor: number;
+    let bgColor: number;
+    if (isCurrent) {
+      bgColor     = 0x1a2630;
+      borderColor = COLORS.GOLD;
+    } else if (isPrev) {
+      bgColor     = 0x111111;
+      borderColor = 0x334433;
+    } else {
+      bgColor     = 0x111820;
+      borderColor = 0x334455;
     }
 
-    // Gained section
-    const gainLabel = new Text({
-      text: '✅ 獲得：',
-      style: new TextStyle({ fontSize: 13, fill: 0x4AFF7A }),
+    cardBg.roundRect(0, 0, w, h, 14);
+    cardBg.fill(bgColor);
+    cardBg.stroke({ width: isCurrent ? 3 : 1.5, color: borderColor, alpha: isCurrent ? 1 : 0.55 });
+    card.addChild(cardBg);
+    card.position.set(x, y);
+    root.addChild(card);
+
+    // Role label badge (top pill)
+    const ROLE_LABELS: Record<typeof role, string> = {
+      previous: '✓ 已完成',
+      current:  'Select',
+      upcoming: 'Upcoming',
+    };
+    const ROLE_BG: Record<typeof role, number> = {
+      previous: 0x334433,
+      current:  0xD98C00,
+      upcoming: 0x334455,
+    };
+    const ROLE_FG: Record<typeof role, number> = {
+      previous: 0x668866,
+      current:  0xFFFFFF,
+      upcoming: 0x8899BB,
+    };
+
+    const badgeBg = new Graphics();
+    const badgeW = w - 32; const badgeH = 30;
+    badgeBg.roundRect(16, -15, badgeW, badgeH, 8);
+    badgeBg.fill(ROLE_BG[role]);
+    if (isCurrent) badgeBg.stroke({ width: 2, color: COLORS.GOLD });
+    card.addChild(badgeBg);
+
+    const badgeTxt = new Text({
+      text: ROLE_LABELS[role],
+      style: new TextStyle({ fontSize: isCurrent ? 16 : 13, fill: ROLE_FG[role], fontWeight: 'bold' }),
     });
-    gainLabel.position.set(dlgX + 16, fy + 8);
-    overlay.addChild(gainLabel);
+    badgeTxt.anchor.set(0.5, 0.5);
+    badgeTxt.position.set(w / 2, -15 + badgeH / 2);
+    card.addChild(badgeTxt);
 
-    const tagDesc = encounterType === 'elite'
-      ? '1 個稀有標籤（負片/挑戰/稀有）\n或 30% 機率：銅/銀/金 寶箱'
-      : '1 個隨機標籤（經濟/靈藥/稀有）';
+    if (encType === null) {
+      // Empty state
+      const emptyTxt = new Text({
+        text: role === 'previous' ? '—\n最後遭遇' : '🎉\n本層完畢',
+        style: new TextStyle({ fontSize: 14, fill: 0x445544, align: 'center' }),
+      });
+      emptyTxt.anchor.set(0.5);
+      emptyTxt.position.set(w / 2, h / 2);
+      card.addChild(emptyTxt);
+      return;
+    }
 
-    const gainedTxt = new Text({
-      text: `  • ${tagDesc}`,
+    // ── Encounter type chip ──────────────────────────────
+    const encMeta = this._getEncounterMeta(encType, floor);
+    const chipBg = new Graphics();
+    chipBg.roundRect(w / 2 - 56, 30, 112, 24, 6);
+    chipBg.fill(encMeta.chipColor);
+    card.addChild(chipBg);
+
+    const chipTxt = new Text({
+      text: encMeta.typeName,
+      style: new TextStyle({ fontSize: 12, fill: 0xFFFFFF, fontWeight: 'bold' }),
+    });
+    chipTxt.anchor.set(0.5, 0.5);
+    chipTxt.position.set(w / 2, 30 + 12);
+    card.addChild(chipTxt);
+
+    // ── Big icon ─────────────────────────────────────────
+    const iconBg = new Graphics();
+    iconBg.circle(w / 2, 110, 44);
+    iconBg.fill({ color: encMeta.iconBgColor, alpha: isPrev ? 0.35 : 0.9 });
+    iconBg.stroke({ width: 2, color: encMeta.borderColor, alpha: isPrev ? 0.2 : 0.7 });
+    if (isCurrent && encType === 'boss') {
+      iconBg.eventMode = 'static';
+      iconBg.cursor = 'pointer';
+      iconBg.on('pointerdown', () => this._showBossPreview(floor));
+      iconBg.on('pointerover', () => { iconBg.tint = 0xdddddd; });
+      iconBg.on('pointerout',  () => { iconBg.tint = 0xffffff; });
+    }
+    card.addChild(iconBg);
+
+    const iconTxt = new Text({
+      text: encMeta.icon,
+      style: new TextStyle({ fontSize: 36 }),
+    });
+    iconTxt.anchor.set(0.5);
+    iconTxt.position.set(w / 2, 110);
+    card.addChild(iconTxt);
+
+    // ── Name ─────────────────────────────────────────────
+    const nameTxt = new Text({
+      text: encMeta.name,
       style: new TextStyle({
-        fontSize: 12,
-        fill: 0x88EE88,
+        fontSize: 15,
+        fill: isPrev ? 0x556655 : isCurrent ? 0xFFFFFF : 0x8899BB,
+        fontWeight: 'bold',
+        align: 'center',
         wordWrap: true,
-        wordWrapWidth: dlgW - 32,
+        wordWrapWidth: w - 24,
       }),
     });
-    gainedTxt.position.set(dlgX + 16, fy + 28);
-    overlay.addChild(gainedTxt);
+    nameTxt.anchor.set(0.5, 0);
+    nameTxt.position.set(w / 2, 162);
+    card.addChild(nameTxt);
 
-    // Buttons
-    const btnY = dlgY + dlgH - 52;
+    // ── HP bar + ATK stats ─────────────────────────────────
+    const statsBoxY = 196;
+    const statsBoxH = 52;
+    const statsBg = new Graphics();
+    statsBg.roundRect(12, statsBoxY, w - 24, statsBoxH, 8);
+    statsBg.fill({ color: 0x000000, alpha: isPrev ? 0.15 : 0.4 });
+    card.addChild(statsBg);
 
-    const confirmBtn = this._buildButton('確定跳過', 130, 36, 0xFF4444, () => {
-      this._closeSkipOverlay();
-      this._onSkipEncounter?.();
+    // HP bar track
+    const hpBarX = 20; const hpBarY = statsBoxY + 8;
+    const hpBarW = w - 40; const hpBarH = 10;
+    const hpVal = typeof encMeta.hp === 'number' ? encMeta.hp : 0;
+    // Bar background
+    const hpTrack = new Graphics();
+    hpTrack.roundRect(hpBarX, hpBarY, hpBarW, hpBarH, 3);
+    hpTrack.fill(0x330000);
+    card.addChild(hpTrack);
+    // Bar fill (always full — showing max HP for a fresh encounter)
+    const hpFill = new Graphics();
+    hpFill.roundRect(hpBarX, hpBarY, hpBarW, hpBarH, 3);
+    hpFill.fill(isPrev ? 0x335533 : 0xCC2222);
+    card.addChild(hpFill);
+
+    // HP label
+    const hpLabel = new Text({
+      text: `HP  ${hpVal.toLocaleString()}`,
+      style: new TextStyle({ fontSize: 11, fill: isPrev ? 0x557755 : 0xFF9999, fontWeight: 'bold' }),
     });
-    confirmBtn.position.set(dlgX + 16, btnY);
-    overlay.addChild(confirmBtn);
+    hpLabel.anchor.set(0, 0.5);
+    hpLabel.position.set(hpBarX, statsBoxY + 35);
+    card.addChild(hpLabel);
 
-    const cancelBtn = this._buildButton('取消', 130, 36, 0x334455, () => this._closeSkipOverlay());
-    cancelBtn.position.set(dlgX + dlgW - 146, btnY);
-    overlay.addChild(cancelBtn);
+    // ATK label (right-aligned)
+    const atkLabel = new Text({
+      text: `⚔ ATK  ${encMeta.atk}`,
+      style: new TextStyle({ fontSize: 11, fill: isPrev ? 0x557755 : 0xFFAA44, fontWeight: 'bold' }),
+    });
+    atkLabel.anchor.set(1, 0.5);
+    atkLabel.position.set(w - 20, statsBoxY + 35);
+    card.addChild(atkLabel);
 
-    root.addChild(overlay);
-  }
+    // ── Mechanics (for boss/upcoming) ─────────────────────
+    let mechY = 252;
+    if (!isPrev && encMeta.mechanics && encMeta.mechanics.length > 0) {
+      for (const mech of encMeta.mechanics.slice(0, 2)) {
+        const mechBg = new Graphics();
+        mechBg.roundRect(10, mechY, w - 20, 38, 6);
+        mechBg.fill({ color: 0x2a0000, alpha: 0.85 });
+        mechBg.stroke({ width: 1, color: 0xFF4444, alpha: 0.4 });
+        card.addChild(mechBg);
 
-  private _closeSkipOverlay(): void {
-    if (this._skipOverlay) {
-      this._viewport.root.removeChild(this._skipOverlay);
-      this._skipOverlay = null;
+        const mechTxt = new Text({
+          text: MECHANIC_LABELS[mech] ?? `🚫 ${mech}`,
+          style: new TextStyle({ fontSize: 9.5, fill: 0xFF9999, wordWrap: true, wordWrapWidth: w - 30 }),
+        });
+        mechTxt.position.set(14, mechY + 5);
+        card.addChild(mechTxt);
+
+        mechY += 44;
+      }
+    } else if (!isPrev) {
+      // Reward preview for non-boss
+      const rewardBg = new Graphics();
+      rewardBg.roundRect(10, mechY, w - 20, 34, 6);
+      rewardBg.fill({ color: 0x0a2a0a, alpha: 0.8 });
+      rewardBg.stroke({ width: 1, color: 0x4AFF7A, alpha: 0.35 });
+      card.addChild(rewardBg);
+
+      const rewardTxt = new Text({
+        text: `🏆 勝利: +${encType === 'elite' ? '5-7' : '3-5'} 金 + 商店`,
+        style: new TextStyle({ fontSize: 10.5, fill: 0x88DDAA }),
+      });
+      rewardTxt.position.set(16, mechY + 9);
+      card.addChild(rewardTxt);
+      mechY += 40;
+    }
+
+    // ── Upcoming: Up the Ante callout ────────────────────
+    if (isNext && encType === 'boss') {
+      const anteBg = new Graphics();
+      anteBg.roundRect(10, mechY + 4, w - 20, 46, 6);
+      anteBg.fill(0x2a1800);
+      anteBg.stroke({ width: 1, color: COLORS.GOLD, alpha: 0.5 });
+      card.addChild(anteBg);
+
+      const anteTxt = new Text({
+        text: `⚠️ Up the Ante\n所有遭遇難度提升，商店刷新`,
+        style: new TextStyle({ fontSize: 10, fill: COLORS.GOLD, wordWrap: true, wordWrapWidth: w - 30, leading: 3 }),
+      });
+      anteTxt.position.set(14, mechY + 10);
+      card.addChild(anteTxt);
+      mechY += 54;
+    }
+
+    // ── Current card: action buttons ────────────────────
+    if (isCurrent && onStart) {
+      const btnAreaY = h - 128;
+
+      // Start Battle button (Balatro "Select" style)
+      const startBg = new Graphics();
+      startBg.roundRect(14, btnAreaY, w - 28, 44, 10);
+      startBg.fill(COLORS.BUTTON_PRIMARY);
+      card.addChild(startBg);
+
+      const startTxt = new Text({
+        text: '⚔️ 開始戰鬥',
+        style: new TextStyle({ fontSize: 15, fill: 0xFFFFFF, fontWeight: 'bold' }),
+      });
+      startTxt.anchor.set(0.5);
+      startTxt.position.set(w / 2, btnAreaY + 22);
+      card.addChild(startTxt);
+
+      // Click events on cardBg area for start button
+      const startArea = new Container();
+      startArea.eventMode = 'static';
+      startArea.cursor = 'pointer';
+      startArea.hitArea = { contains: (px: number, py: number) => px >= 14 && px <= w - 14 && py >= btnAreaY && py <= btnAreaY + 44 } as any;
+      startArea.on('pointerdown', onStart);
+      startArea.on('pointerover', () => { startBg.tint = 0xdddddd; });
+      startArea.on('pointerout',  () => { startBg.tint = 0xffffff; });
+      card.addChild(startArea);
+
+      if (encType !== 'boss') {
+        const skipEncType = encType as 'standard' | 'elite';
+        const reward = this._previewSkipReward(skipEncType);
+
+        // "or" divider
+        const orTxt = new Text({
+          text: 'or',
+          style: new TextStyle({ fontSize: 13, fill: 0x667788, fontStyle: 'italic' }),
+        });
+        orTxt.anchor.set(0.5, 0);
+        orTxt.position.set(w / 2, btnAreaY + 52);
+        card.addChild(orTxt);
+
+        // ── Inline skip reward preview ──────────────────
+        const skipRewardBg = new Graphics();
+        skipRewardBg.roundRect(14, btnAreaY + 68, w - 28, 38, 8);
+        skipRewardBg.fill({ color: 0x1a0a0a, alpha: 0.9 });
+        skipRewardBg.stroke({ width: 1.5, color: 0xCC3333, alpha: 0.7 });
+        card.addChild(skipRewardBg);
+
+        const rewardIconTxt = new Text({
+          text: reward.icon,
+          style: new TextStyle({ fontSize: 16 }),
+        });
+        rewardIconTxt.anchor.set(0, 0.5);
+        rewardIconTxt.position.set(24, btnAreaY + 68 + 19);
+        card.addChild(rewardIconTxt);
+
+        const rewardLabelTxt = new Text({
+          text: `跳過獎勵：${reward.label}`,
+          style: new TextStyle({ fontSize: 11, fill: 0xFFAAAA }),
+        });
+        rewardLabelTxt.anchor.set(0, 0.5);
+        rewardLabelTxt.position.set(46, btnAreaY + 68 + 13);
+        card.addChild(rewardLabelTxt);
+
+        const rewardDescTxt = new Text({
+          text: reward.kind === 'gold' ? '即時獲得金幣'
+            : reward.kind === 'consumable' ? '消耗品槽上限 +1'
+            : '隨機獲得一個遺物',
+          style: new TextStyle({ fontSize: 9.5, fill: 0x996666 }),
+        });
+        rewardDescTxt.anchor.set(0, 0.5);
+        rewardDescTxt.position.set(46, btnAreaY + 68 + 27);
+        card.addChild(rewardDescTxt);
+
+        // Skip button — directly below reward preview
+        const skipBg = new Graphics();
+        skipBg.roundRect(14, btnAreaY + 112, w - 28, 40, 10);
+        skipBg.fill(0xCC2222);
+        card.addChild(skipBg);
+
+        const skipIcon = new Text({
+          text: '⏩',
+          style: new TextStyle({ fontSize: 14 }),
+        });
+        skipIcon.anchor.set(0, 0.5);
+        skipIcon.position.set(26, btnAreaY + 112 + 20);
+        card.addChild(skipIcon);
+
+        const skipTxt = new Text({
+          text: '跳過遭遇',
+          style: new TextStyle({ fontSize: 14, fill: 0xFFFFFF, fontWeight: 'bold' }),
+        });
+        skipTxt.anchor.set(0.5);
+        skipTxt.position.set(w / 2 + 8, btnAreaY + 112 + 20);
+        card.addChild(skipTxt);
+
+        // Direct skip — no dialog
+        const skipArea = new Container();
+        skipArea.eventMode = 'static';
+        skipArea.cursor = 'pointer';
+        skipArea.hitArea = { contains: (px: number, py: number) => px >= 14 && px <= w - 14 && py >= btnAreaY + 112 && py <= btnAreaY + 152 } as any;
+        skipArea.on('pointerdown', () => this._onSkipEncounter?.());
+        skipArea.on('pointerover', () => { skipBg.tint = 0xdddddd; });
+        skipArea.on('pointerout',  () => { skipBg.tint = 0xffffff; });
+        card.addChild(skipArea);
+      }
+    }
+
+    // Dimming overlay for previous cards
+    if (isPrev) {
+      const dim = new Graphics();
+      dim.roundRect(0, 0, w, h, 14);
+      dim.fill({ color: 0x000000, alpha: 0.45 });
+      card.addChild(dim);
     }
   }
+
+  // ─── Encounter metadata helper ───────────────────────────
+
+  private _getEncounterMeta(type: 'standard' | 'elite' | 'boss', floor: number) {
+    const floorHp = FLOOR_ENEMY_HP[floor];
+    const boss = type === 'boss' ? getBossForFloor(floor) : undefined;
+
+    const hp  = floorHp
+      ? (type === 'boss'  ? floorHp.boss
+       : type === 'elite' ? floorHp.elite
+       : floorHp.standard)
+      : '?';
+    const atk = type === 'boss' && boss ? boss.baseAtk
+      : type === 'elite' ? Math.max(8, Math.round(floor * 5))
+      : Math.max(5, Math.round(floor * 3.5));
+
+    switch (type) {
+      case 'standard': return {
+        icon: '⚔️', name: '普通怪', typeName: '⚔️  普通遭遇',
+        hp, atk,
+        borderColor: 0x4488CC, chipColor: 0x1a3a6a, iconBgColor: 0x112240,
+        mechanics: [],
+      };
+      case 'elite': return {
+        icon: '🛡️', name: '菁英怪', typeName: '🛡️  菁英遭遇',
+        hp, atk,
+        borderColor: 0xCC8822, chipColor: 0x4a2a00, iconBgColor: 0x3a1800,
+        mechanics: [],
+      };
+      case 'boss': {
+        const bossName = boss ? boss.name : `Boss F${floor}`;
+        return {
+          icon: '💀', name: `Boss:\n${bossName}`, typeName: '💀  BOSS',
+          hp, atk,
+          borderColor: 0xFF4444, chipColor: 0x4a0000, iconBgColor: 0x2a0000,
+          mechanics: boss?.mechanics ?? [],
+        };
+      }
+    }
+  }
+
+  // ─── Floor progress bar ──────────────────────────────────
+
+  private _drawFloorProgressBar(root: Container, floor: number, encIdx: number, totalEnc: number): void {
+    const barY = DESIGN_H - 52;
+
+    const barBg = new Graphics();
+    barBg.rect(0, barY - 4, DESIGN_W, 56);
+    barBg.fill({ color: 0x000000, alpha: 0.5 });
+    root.addChild(barBg);
+
+    // Encounter progress dots
+    const dotW = 28; const dotGap = 10;
+    const dotsTotal = dotW * totalEnc + dotGap * (totalEnc - 1);
+    let dx = DESIGN_W / 2 - dotsTotal / 2;
+
+    for (let i = 0; i < totalEnc; i++) {
+      const encData = this._run.currentFloorData?.encounters[i];
+      const isCurrentDot = i === encIdx;
+      const isPastDot    = i < encIdx;
+      const color = isPastDot ? 0x4AFF7A : isCurrentDot ? COLORS.GOLD : 0x334455;
+
+      const dot = new Graphics();
+      dot.roundRect(dx, barY + 4, dotW, dotW, 6);
+      dot.fill(color);
+      if (isCurrentDot) dot.stroke({ width: 2, color: COLORS.GOLD });
+      root.addChild(dot);
+
+      const dotTxt = new Text({
+        text: encData === 'boss' ? '💀' : encData === 'elite' ? '🛡️' : '⚔️',
+        style: new TextStyle({ fontSize: 12 }),
+      });
+      dotTxt.anchor.set(0.5);
+      dotTxt.position.set(dx + dotW / 2, barY + 4 + dotW / 2);
+      root.addChild(dotTxt);
+
+      dx += dotW + dotGap;
+    }
+
+    // Floor number label
+    const floorTxt = new Text({
+      text: `F${floor}  遭遇 ${encIdx + 1} / ${totalEnc}`,
+      style: new TextStyle({ fontSize: 11, fill: COLORS.TEXT_DIM }),
+    });
+    floorTxt.anchor.set(0.5, 0);
+    floorTxt.position.set(DESIGN_W / 2, barY + dotW + 8);
+    root.addChild(floorTxt);
+  }
+
+
 
   // ─── Boss Preview Overlay ─────────────────────────────
 
@@ -488,5 +769,19 @@ export class MapScene implements Scene {
     c.on('pointerout',  () => { bg.tint = 0xffffff; });
 
     return c;
+  }
+
+  /** Preview skip reward for inline display (uses Math.random for UI variety) */
+  private _previewSkipReward(type: 'standard' | 'elite'): SkipReward {
+    const roll = Math.random();
+    if (type === 'elite') {
+      if (roll < 0.40) return { kind: 'gold',        amount: 8, label: '+8 金',       icon: '💰' };
+      if (roll < 0.75) return { kind: 'consumable',  amount: 1, label: '消耗品槽 +1', icon: '🧪' };
+      return               { kind: 'relic_random',  amount: 0, label: '隨機遺物',    icon: '🔮' };
+    } else {
+      if (roll < 0.55) return { kind: 'gold',       amount: 4, label: '+4 金',       icon: '💰' };
+      if (roll < 0.85) return { kind: 'consumable', amount: 1, label: '消耗品槽 +1', icon: '🧪' };
+      return               { kind: 'gold',          amount: 6, label: '+6 金（幸運）', icon: '💰' };
+    }
   }
 }

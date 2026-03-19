@@ -14,6 +14,14 @@ import { createStandardDeck } from '@/models/card';
 import { createInitialRunStats, type RunStats } from '@/models/run-state';
 import { getBossForFloor, FLOOR_ENEMY_HP } from '@/data/bosses';
 
+// ─── Skip Reward ─────────────────────────────────────────────
+export interface SkipReward {
+  kind: 'gold' | 'consumable' | 'relic_random';
+  amount: number;
+  label: string;
+  icon: string;
+}
+
 // ─── Run Phase ──────────────────────────────────────────────
 
 export type RunPhase =
@@ -216,8 +224,13 @@ export class RunManager {
     });
   }
 
+  // ─── Skip Reward ────────────────────────────────────────────
+  /** What the player gets for skipping an encounter */
+  lastSkipReward: SkipReward | null = null;
+
   /**
-   * Skip the current encounter (get a tag instead of rewards).
+   * Skip the current encounter and immediately grant a skip reward.
+   * Standard skip → minor reward; Elite skip → better reward.
    * Only non-boss encounters can be skipped.
    */
   skipEncounter(): boolean {
@@ -227,14 +240,42 @@ export class RunManager {
     const encounterType = floorData.encounters[floorData.currentEncounter];
     if (encounterType === 'boss') return false; // Can't skip boss
 
+    // Determine and apply reward
+    const reward = this._generateSkipReward(encounterType);
+    this._applySkipReward(reward);
+    this.lastSkipReward = reward;
+
     floorData.currentEncounter++;
     this._phase = 'map';
 
-    this._events.emit('run:encounter_skipped', {
-      type: encounterType,
-    });
-
+    this._events.emit('run:encounter_skipped', { type: encounterType } as any);
     return true;
+  }
+
+  private _generateSkipReward(type: 'standard' | 'elite'): SkipReward {
+    const roll = this._rng.random('skip');
+    if (type === 'elite') {
+      // Elite skip: 40% gold, 35% consumable slot, 25% random relic
+      if (roll < 0.40) return { kind: 'gold',       amount: 8,  label: '+8 金',       icon: '💰' };
+      if (roll < 0.75) return { kind: 'consumable',  amount: 1,  label: '消耗品槽 +1', icon: '🧪' };
+      return                  { kind: 'relic_random', amount: 0,  label: '隨機遺物',    icon: '🔮' };
+    } else {
+      // Standard skip: 55% gold, 30% consumable slot, 15% small gold bonus
+      if (roll < 0.55) return { kind: 'gold',      amount: 4, label: '+4 金',       icon: '💰' };
+      if (roll < 0.85) return { kind: 'consumable', amount: 1, label: '消耗品槽 +1', icon: '🧪' };
+      return                  { kind: 'gold',       amount: 6, label: '+6 金（幸運）', icon: '💰' };
+    }
+  }
+
+  private _applySkipReward(reward: SkipReward): void {
+    if (reward.kind === 'gold') {
+      this.player.money += reward.amount;
+      this.stats.moneyEarned += reward.amount;
+      this._events.emit('economy:money_changed', { current: this.player.money, delta: reward.amount });
+    } else if (reward.kind === 'consumable') {
+      this.player.maxConsumables = Math.min(this.player.maxConsumables + 1, 5);
+    }
+    // relic_random: applied externally by game.ts after getRandomRelic()
   }
 
   /**

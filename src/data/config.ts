@@ -9,6 +9,7 @@ export const CONFIG = {
   INITIAL_PLAYS: 4,
   INITIAL_DISCARDS: 3,
   HAND_SIZE: 8,
+  MAX_PLAY_CARDS: 5,    // Max cards per play (GDD Phase 1 §2)
 
   // ─── Relic Slots ────────────────────────────────────────
   INITIAL_RELIC_SLOTS: 5,

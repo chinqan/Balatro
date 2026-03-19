@@ -19,6 +19,7 @@ import { SettlementScene } from '@/scenes/settlement-scene';
 import { CollectionScene } from '@/scenes/collection-scene';
 import { SettingsScene } from '@/scenes/settings-scene';
 import { saveManager, buildSaveData } from '@/systems/save-manager';
+import { getRandomRelic } from '@/data/relics';
 import '@/systems/unlock-manager';  // ensure singleton is initialized
 
 export class Game {
@@ -225,10 +226,37 @@ export class Game {
                 { type: 'skip',  label: '跳過',     icon: '⏩' },
               ],
             });
+            // Wire the reward-choice callback — applies the chosen reward to the run
+            this._settlementScene.setOnChooseReward((choice) => {
+              if (choice.type === 'relic') {
+                const def = getRandomRelic(() => this.rng.random('loot'));
+                this._run.relics.push({
+                  definitionId: def.id,
+                  order: this._run.relics.length,
+                  isActive: true,
+                });
+              }
+              // pack: for now same as relic (full card-opening UI is future work)
+              // skip: no-op
+            });
             this._settlementScene.setOnContinue(() => {
               if (this._run.shop) {
+                const relicNames = this._run.relics.map(r => r.definitionId);
                 this._shopScene.setShopManager(this._run.shop);
                 this._shopScene.setPlayer(this._run.player);
+                this._shopScene.setRelicNames(relicNames);
+                this._shopScene.setOnPurchase((item) => {
+                  if (item.type === 'relic' && item.relic) {
+                    this._run.relics.push({
+                      definitionId: item.relic.id,
+                      order: this._run.relics.length,
+                      isActive: true,
+                    });
+                    // Update inventory display after purchase
+                    this._shopScene.setRelicNames(this._run.relics.map(r => r.definitionId));
+                    this._shopScene.refreshShop();
+                  }
+                });
                 this.scenes.switchTo('shop');
               }
             });

@@ -4,8 +4,10 @@
 // ============================================================
 
 import type { Card, HandType, RelicInstance, SettlementStep, SettlementResult } from '@/types';
+import type { RelicDefinition } from '@/types';
 import { RANK_ATK_VALUES } from '@/types';
 import { evaluateHand } from '@/systems/hand-evaluator';
+import { getRelicById } from '@/data/relics';
 import type { SeedManager } from '@/core/rng';
 
 /**
@@ -130,19 +132,22 @@ export function calculateDamage(
 
   // ════════════════════════════════════════════════════════════
   // Phase 4: 神器追擊 — Resolve relics left to right
+  // GDD Phase 1 §5: 遺物嚴格由左至右依序結算
   // ════════════════════════════════════════════════════════════
+  const playedCount = playedCards.length;
   for (const relic of relics) {
     if (!relic.isActive) continue; // Silenced relics don't trigger
 
-    // TODO: Resolve actual relic effects from relic definitions
-    // For now, relics are placeholder — will be implemented in Sprint 5
-    // Example: addStep(ctx, 4, `relic:${relic.definitionId}`, ...);
+    const def = getRelicById(relic.definitionId);
+    if (!def) continue;
+
+    applyRelicEffect(ctx, def, evalResult.handType, playedCards, heldCards, playedCount, relic);
   }
 
   // ════════════════════════════════════════════════════════════
   // Calculate final damage
   // ════════════════════════════════════════════════════════════
-  const finalDamage = Math.floor(ctx.atk * ctx.dmgMult);
+  const finalDamage = Math.floor(ctx.atk * Math.max(1, ctx.dmgMult));
 
   return {
     handType: evalResult.handType,
@@ -235,5 +240,115 @@ function processSeal(ctx: SettlementContext, card: Card): void {
     // blue: generate random elixir (consumable system)
     // gold_seal: +3 money at round end (economy)
     // purple: on destroy trigger random pact (destruction system)
+  }
+}
+
+// ─── Phase 4 Relic Resolution (GDD Phase 1 §5.2) ────────────
+
+function applyRelicEffect(
+  ctx: SettlementContext,
+  def: RelicDefinition,
+  handType: HandType,
+  playedCards: Card[],
+  heldCards: Card[],
+  playedCount: number,
+  instance: RelicInstance,
+): void {
+  const eff = def.effect;
+
+  // Roll probability if needed
+  if (eff.chance !== undefined) {
+    if (ctx.rng.random('loot') >= eff.chance) return; // Didn't trigger
+  }
+
+  // Determine if condition is met
+  if (!checkRelicCondition(eff.type, eff.condition ?? '', handType, playedCards, heldCards, playedCount, instance)) {
+    return;
+  }
+
+  const label = `${def.name}: ${def.description}`;
+
+  // Apply main stat effect
+  switch (eff.stat) {
+    case 'atk': {
+      addStep(ctx, 4, `relic:${def.id}`, `+${eff.value} ATK (${label})`,
+        ctx.atk + eff.value, ctx.dmgMult);
+      break;
+    }
+    case 'dmg': {
+      addStep(ctx, 4, `relic:${def.id}`, `+${eff.value} DMG Mult (${label})`,
+        ctx.atk, ctx.dmgMult + eff.value);
+      break;
+    }
+    case 'dmg_mult': {
+      addStep(ctx, 4, `relic:${def.id}`, `×${eff.value} DMG Mult (${label})`,
+        ctx.atk, ctx.dmgMult * eff.value);
+      break;
+    }
+    case 'shield': {
+      addStep(ctx, 4, `relic:${def.id}`, `+${eff.value} Shield (${label})`,
+        ctx.atk, ctx.dmgMult, eff.value);
+      break;
+    }
+    // 'pierce', 'money', etc. — handled by gameplay systems, not damage calc
+  }
+
+  // Apply side effect if any (e.g. R008 血染短刀 costs HP)
+  // Side effects are noted in the step description but actual HP deduction
+  // is handled post-settlement by the caller who checks eff.sideEffect
+}
+
+/**
+ * Returns true if the relic's trigger condition is fulfilled.
+ */
+function checkRelicCondition(
+  type: string,
+  condition: string,
+  handType: HandType,
+  playedCards: Card[],
+  heldCards: Card[],
+  playedCount: number,
+  instance: RelicInstance,
+): boolean {
+  switch (type) {
+    case 'on_play':
+      return true;                  // Always triggers on any play
+
+    case 'on_hand_type':
+      return handType === condition; // Must match specific hand type
+
+    case 'on_first_play': {
+      // Triggers only the first time per battle (tracked via charges)
+      if ((instance.charges ?? 0) > 0) return false;
+      instance.charges = (instance.charges ?? 0) + 1;
+      return true;
+    }
+
+    case 'conditional': {
+      switch (condition) {
+        case 'has_enhanced_card':
+          return playedCards.some(c => c.enhancement != null);
+        case 'cards_played_gte_3':
+          return playedCount >= 3;
+        case 'cards_played_gte_4':
+          return playedCount >= 4;
+        case 'hand_size_gte_7':
+          return (playedCount + heldCards.length) >= 7;
+        case 'no_face_cards':
+          return playedCards.every(c => c.rank < 11); // No J/Q/K
+        case 'all_same_suit': {
+          const suits = new Set(playedCards.map(c => c.suit));
+          return suits.size === 1;
+        }
+        default:
+          return true; // Unknown conditions trigger by default
+      }
+    }
+
+    case 'passive':
+      return false; // Passive effects don't generate damage steps
+
+    default:
+      return false; // Unknown trigger types don't fire during settlement
   }
 }

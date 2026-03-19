@@ -99,16 +99,17 @@ export class ShopManager {
 
   /**
    * Purchase an item at the given index.
-   * Returns true if purchase succeeds.
+   * Returns the purchased ShopItem on success, or null on failure.
+   * Caller is responsible for applying the item effect to the run.
    */
-  purchase(index: number, player: PlayerState): boolean {
+  purchase(index: number, player: PlayerState): ShopItem | null {
     const item = this._state.items[index];
-    if (!item || item.sold) return false;
-    if (player.money < item.price) return false;
+    if (!item || item.sold) return null;
+    if (player.money < item.price) return null;
 
     player.money -= item.price;
     item.sold = true;
-    return true;
+    return item;
   }
 
   /**

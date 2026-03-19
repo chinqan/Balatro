@@ -18,6 +18,8 @@ import { DeckViewer } from '@/ui/deck-viewer';
 import { PauseMenu } from '@/scenes/pause-menu';
 import { DebugPanel } from '@/ui/debug-panel';
 import { DamageNumberSystem } from '@/rendering/damage-number';
+import { RelicBar, RELIC_CARD_W, RELIC_CARD_GAP } from '@/ui/relic-card';
+import { playSettlement } from '@/rendering/settlement-animator';
 import { BattleManager, createBattle } from '@/systems/battle-manager';
 import { DeckManager } from '@/systems/deck-manager';
 import { createStandardDeck } from '@/models/card';
@@ -29,6 +31,7 @@ import { EventBus } from '@/core/event-bus';
 import { BOSS_DEFINITIONS } from '@/data/bosses';
 import { HAND_TYPE_DATA } from '@/data/hand-types';
 import { evaluateHand } from '@/systems/hand-evaluator';
+import type { RelicInstance } from '@/types';
 
 export class BattleScene implements Scene {
   readonly name = 'battle';
@@ -53,6 +56,12 @@ export class BattleScene implements Scene {
   private _pauseMenu!: PauseMenu;
   private _debugPanel!: DebugPanel;
   private _damageNumbers!: DamageNumberSystem;
+  /** Always-visible Balatro-style relic bar (top-right horizontal strip of relic cards) */
+  private _relicBar!: RelicBar;
+  /** Tooltip layer above everything (for relic card hover tooltips) */
+  private _tooltipLayer!: Container;
+  /** Whether a settlement animation is currently playing (locks UI) */
+  private _animating = false;
 
   // Encounter info (set externally or defaults)
   private _currentFloor = 1;
@@ -154,9 +163,9 @@ export class BattleScene implements Scene {
     this._floorIndicator.position.set(8, 6);
     root.addChild(this._floorIndicator);
 
-    // ────────── Consumable Slot (top-right) ──────────
+    // ────────── Consumable Slot (left, below player HP bar) ──────────
     this._consumableSlot = new ConsumableSlot();
-    this._consumableSlot.position.set(DESIGN_W - 120, 6);
+    this._consumableSlot.position.set(20, LAYOUT.HAND_AREA_Y + 94);
     root.addChild(this._consumableSlot);
     this._consumableSlot.setOnUse((slotIdx) => this._onUseConsumable(slotIdx));
 
@@ -164,6 +173,23 @@ export class BattleScene implements Scene {
     this._runInfoPanel = new RunInfoPanel();
     this._runInfoPanel.position.set(4, 40);
     root.addChild(this._runInfoPanel);
+
+    // ────────── Tooltip Layer (above everything — for relic tooltips) ──────────
+    this._tooltipLayer = new Container();
+    root.addChild(this._tooltipLayer);
+
+    // ────────── Relic Bar (Balatro-style horizontal card strip, top-right) ──────────
+    this._relicBar = new RelicBar(this._tooltipLayer);
+    this._relicBar.position.set(DESIGN_W - 8 - 5 * (RELIC_CARD_W + RELIC_CARD_GAP), 26);
+    root.addChild(this._relicBar);
+    // Relic bar label
+    const relicBarLabel = new Text({
+      text: '🔮 遺物',
+      style: new TextStyle({ fontSize: 10, fill: COLORS.GOLD }),
+    });
+    relicBarLabel.anchor.set(1, 0);
+    relicBarLabel.position.set(DESIGN_W - 8, 12);
+    root.addChild(relicBarLabel);
 
     // ── Run Info toggle button ──
     const runInfoBtn = new Container();
@@ -325,17 +351,49 @@ export class BattleScene implements Scene {
 
   // ─── Actions ──────────────────────────────────────────────
 
-  private _onPlayCards(): void {
+  private async _onPlayCards(): Promise<void> {
     if (!this._battle.canPlay) return;
+    if (this._animating) return; // Block if animation still plays
     const indices = this._handDisplay.getSelectedIndices();
     if (indices.length === 0) return;
+
+    this._animating = true;
+    this._hud.setEnabled(false); // Lock UI during animation
 
     try {
       const result = this._battle.playCards(indices);
       console.log(`[DEBUG] playCards done → phase=${this._battle.phase}, bossHP=${this._battle.boss.hp}, damage=${result.finalDamage}`);
-      this._damageNumbers.spawn(DESIGN_W / 2, LAYOUT.BOSS_AREA_Y + 120, result.finalDamage, COLORS.ATK);
 
-      // 勝負由 update() phase watcher 統一處理，此處不再重複判斷
+      // Refresh bars immediately so current HP is visible before animation
+      this._refreshAllUI();
+
+      // Run 4-phase settlement animation
+      const relics: RelicInstance[] = this._battle['_relics'] ?? [];
+      await playSettlement({
+        root: this._viewport.root,
+        result,
+        relics,
+        relicBarContainer: this._relicBar,
+        onPartialHpDrain: (fraction) => {
+          // Gradually drag HP bar down during relic chain
+          const phase4Steps = result.steps.filter(s => s.phase === 4);
+          if (phase4Steps.length > 0) {
+            const partial = Math.floor(result.finalDamage * fraction);
+            this._bossHpBar.setValue(
+              Math.max(0, this._battle.boss.hp + result.finalDamage - partial),
+              this._battle.boss.maxHp,
+              this._battle.boss.shield,
+            );
+          }
+        },
+        onFinalDamage: (_total) => {
+          this._bossHpBar.setValue(this._battle.boss.hp, this._battle.boss.maxHp, this._battle.boss.shield);
+        },
+        bossX: DESIGN_W / 2,
+        bossY: LAYOUT.BOSS_AREA_Y + 120,
+      });
+
+      // Victory/defeat handled by update() phase watcher
       if (this._battle.phase === 'victory' || this._battle.phase === 'defeat') {
         console.log(`[DEBUG] playCards detected ${this._battle.phase}, waiting for phase watcher`);
         this._refreshAllUI();
@@ -348,13 +406,15 @@ export class BattleScene implements Scene {
       if (this._battle.phase === 'boss_turn') {
         setTimeout(() => this._executeBossTurn(), 600);
       } else if (this._battle.player.plays <= 0 && this._battle.player.discards <= 0) {
-        // No plays AND no discards left — force end turn
         this._battle.endPlayerTurn();
         this._refreshAllUI();
         setTimeout(() => this._executeBossTurn(), 600);
       }
     } catch (e) {
       console.warn('Play failed:', e);
+    } finally {
+      this._animating = false;
+      this._hud.setEnabled(true);
     }
   }
 
@@ -436,6 +496,11 @@ export class BattleScene implements Scene {
     this._handDisplay.clearSelection();
     this._handDisplay.setCards([...this._battle.hand]);
     this._hud.setHandTypePreview('');
+
+    // Update always-visible relic bar (Balatro card style)
+    const relics: RelicInstance[] = this._battle['_relics'] ?? [];
+    this._relicBar.setRelics(relics);
+    this._tooltipLayer.removeChildren(); // Clear any stale tooltips
   }
 
   private _updateHandPreview(indices: number[]): void {

@@ -31,10 +31,15 @@ export class ShopScene implements Scene {
   private _shop!: ShopManager;
   private _player!: PlayerState;
   private _onLeave?: () => void;
+  private _onPurchase?: (item: ShopItem) => void;
+  /** Relic names for inventory display — updated externally */
+  private _relicNames: string[] = [];
 
   setShopManager(shop: ShopManager): void { this._shop = shop; }
   setPlayer(player: PlayerState): void { this._player = player; }
   setOnLeave(cb: () => void): void { this._onLeave = cb; }
+  setOnPurchase(cb: (item: ShopItem) => void): void { this._onPurchase = cb; }
+  setRelicNames(names: string[]): void { this._relicNames = names; }
 
   async init(app: Application, container: Container): Promise<void> {
     this._viewport = new Viewport(app, container);
@@ -58,7 +63,7 @@ export class ShopScene implements Scene {
     // ─── Background ──────────────────────────────────────
     const bg = new Graphics();
     bg.rect(0, 0, DESIGN_W, DESIGN_H);
-    bg.fill(0x0d1117);
+    bg.fill(0x111827);
     root.addChild(bg);
 
     // ─── Header ──────────────────────────────────────────
@@ -135,6 +140,48 @@ export class ShopScene implements Scene {
     const leaveBtn = this._buildButton('➡ 離開商店', 160, 40, COLORS.BUTTON_DANGER, () => this._onLeave?.());
     leaveBtn.position.set(DESIGN_W / 2 + 60, y);
     root.addChild(leaveBtn);
+
+    // ─── Player Inventory Panel ───────────────────────────
+    y += 52;
+    this._drawInventoryPanel(root, y);
+  }
+
+  // ─── Inventory Panel ────────────────────────────────────
+
+  private _drawInventoryPanel(root: Container, startY: number): void {
+    const panelH = 90;
+    const panelBg = new Graphics();
+    panelBg.roundRect(SECTION_MARGIN, startY, DESIGN_W - SECTION_MARGIN * 2, panelH, 8);
+    panelBg.fill({ color: 0x0d1a2a });
+    panelBg.stroke({ width: 1, color: COLORS.GOLD, alpha: 0.4 });
+    root.addChild(panelBg);
+
+    const panelTitle = new Text({
+      text: '🎒 我的庫存',
+      style: new TextStyle({ fontSize: 13, fill: COLORS.GOLD, fontWeight: 'bold' }),
+    });
+    panelTitle.position.set(SECTION_MARGIN + 10, startY + 8);
+    root.addChild(panelTitle);
+
+    // Relics
+    const relicLabel = new Text({
+      text: `🔮 遺物 (${this._relicNames.length}): ${this._relicNames.length > 0 ? this._relicNames.slice(0, 5).join('、') : '無'}`,
+      style: new TextStyle({ fontSize: 11, fill: COLORS.TEXT_PRIMARY, wordWrap: true, wordWrapWidth: DESIGN_W - SECTION_MARGIN * 2 - 20 }),
+    });
+    relicLabel.position.set(SECTION_MARGIN + 10, startY + 30);
+    root.addChild(relicLabel);
+
+    // Consumables
+    const consumables = this._player?.consumables ?? [];
+    const consText = consumables.length > 0
+      ? consumables.map(c => c.definitionId).join('、')
+      : '無';
+    const consLabel = new Text({
+      text: `🧪 消耗品 (${consumables.length}/${this._player?.maxConsumables ?? 2}): ${consText}`,
+      style: new TextStyle({ fontSize: 11, fill: COLORS.TEXT_PRIMARY }),
+    });
+    consLabel.position.set(SECTION_MARGIN + 10, startY + 52);
+    root.addChild(consLabel);
   }
 
   // ─── Section Renderer ────────────────────────────────────
@@ -237,7 +284,11 @@ export class ShopScene implements Scene {
         c.eventMode = 'static';
         c.cursor = 'pointer';
         c.on('pointerdown', () => {
-          if (this._shop.purchase(globalIndex, this._player)) this._rebuildShop();
+          const purchased = this._shop.purchase(globalIndex, this._player);
+          if (purchased) {
+            this._onPurchase?.(purchased);
+            this._rebuildShop();
+          }
         });
         c.on('pointerover', () => { bg.tint = 0xcccccc; });
         c.on('pointerout',  () => { bg.tint = 0xffffff; });
